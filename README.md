@@ -1,3 +1,9 @@
 # docker-php
 
-built with docker build -t php7.4-cli:[release] --rm [path]
+built with `docker build -t php[version]-[variant]:[release] --rm [path]`
+
+where 
+
+`[version]` is `7.4|8.0`
+
+`[variant]` is `cli|fpm`
