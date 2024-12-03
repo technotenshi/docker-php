@@ -1,11 +1,12 @@
-FROM ubuntu:bionic
+FROM ubuntu:noble
 
 LABEL maintainer="miguel@digitec.ws"
 
 ENV TERM=linux
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get -y update && apt-get -y upgrade
+RUN apt-get -y update && \
+    apt-get -y upgrade
 
 RUN apt-get install -y --no-install-recommends software-properties-common gnupg
 
