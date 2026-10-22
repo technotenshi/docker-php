@@ -1,7 +1,7 @@
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Refuse an unpatched or mismatched CLI base before asking apt for FPM.
 RUN set -eu; \
@@ -36,6 +36,7 @@ RUN set -eu; \
 STOPSIGNAL SIGQUIT
 
 COPY overrides.conf /etc/php/8.4/fpm/pool.d/z-overrides.conf
+COPY jit.ini /etc/php/8.4/fpm/conf.d/99-jit.ini
 
 CMD ["/usr/sbin/php-fpm8.4", "-O" ]
 

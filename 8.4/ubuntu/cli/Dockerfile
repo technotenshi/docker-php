@@ -3,7 +3,7 @@ FROM ubuntu:24.04
 LABEL maintainer="miguel@digitec.ws"
 
 ENV TERM=linux
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Install certificate and repository tooling before adding the signed Ondrej PPA.
 RUN apt-get update \

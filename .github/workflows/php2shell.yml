@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Check out repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -48,9 +48,9 @@ jobs:
           import json,sys
           d=json.load(open(sys.argv[1]))
           print('## Vulnerability scan results')
-          print('Independent triage is pending; actionable in-scope Critical/High findings block acceptance.')
+          print('Critical/High findings not listed in tests/trivy-triaged.txt fail the audit step.')
           for r in d['reports']:
-              print(f"- **{r['variant'].upper()}** ({r['image_id']}): Critical {r['critical']}, High {r['high']}; {r['os_package_count']} Ubuntu packages scanned.")
+              print(f"- **{r['variant'].upper()}** ({r['image_id']}): Critical {r['critical']}, High {r['high']}, untriaged {r['untriaged_critical_high']}; {r['os_package_count']} Ubuntu packages scanned.")
           PY
           else
             echo 'Image audit did not complete; no complete scan result is available. See step logs for the operational failure.' >> "$GITHUB_STEP_SUMMARY"

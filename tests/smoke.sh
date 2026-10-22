@@ -91,6 +91,10 @@ if missing: raise SystemExit('CLI missing modules: '+', '.join(sorted(missing)))
 core=['php8.4-cli','php8.4-common','php8.4-curl','php8.4-mbstring','php8.4-opcache','php8.4-readline','php8.4-xml','php8.4-zip']
 if len({p[x] for x in core}) != 1: raise SystemExit('CLI core PHP package version skew')
 PY
+# Guard tests: extract the real RUN blocks from the Dockerfiles (each must match
+# exactly one block, so renaming the matched strings breaks this) and execute
+# them inside the built CLI image against stub php/dpkg-query/apt-get/php-fpm8.4
+# binaries that simulate version floors, package skew, and apt failures.
 mkdir "$work/guard-stubs"
 cat >"$work/guard-stubs/php" <<'SH'
 #!/bin/sh
@@ -347,6 +351,7 @@ fpm_exit_code=$(docker inspect --format '{{.State.ExitCode}}' "$container_id")
 docker logs "$container_id" >"$work/fpm.stdout.log" 2>"$work/fpm.stderr.log"
 grep -q 'GET /index.php' "$work/fpm.stderr.log" || { echo "FPM access log missing from stderr stream" >&2; cat "$work/fpm.stderr.log" >&2; exit 1; }
 grep -q "SMOKE_ERROR_MARKER=$token" "$work/fpm.stderr.log" || { echo "FPM worker error log missing from stderr stream" >&2; cat "$work/fpm.stderr.log" >&2; exit 1; }
+! grep -q 'JIT is incompatible' "$work/fpm.stderr.log" || { echo "FPM startup logged the Xdebug/JIT warning" >&2; cat "$work/fpm.stderr.log" >&2; exit 1; }
 grep -Eiq 'ready to handle connections|fpm is running' "$work/fpm.stderr.log" || { echo "FPM startup log missing" >&2; exit 1; }
 grep -Eiq 'terminating|exiting' "$work/fpm.stderr.log" || { echo "FPM graceful shutdown log missing" >&2; exit 1; }
 docker rm "$container_id" >/dev/null; owned_container=false; container_id=

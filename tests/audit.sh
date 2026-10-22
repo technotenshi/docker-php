@@ -100,9 +100,12 @@ scan_archive cli cli.tar
 scan_archive fpm fpm.tar
 
 summary_tmp=$work/audit-summary.json.tmp
-python3 - "$work/cli-trivy.json" "$work/fpm-trivy.json" "$db_metadata" "$trivy_image" "$artifact_dir/validation.json" >"$summary_tmp" <<'PY'
+triage_file=$(dirname "$0")/trivy-triaged.txt
+python3 - "$work/cli-trivy.json" "$work/fpm-trivy.json" "$db_metadata" "$trivy_image" "$artifact_dir/validation.json" "$triage_file" >"$summary_tmp" <<'PY'
 import datetime,json,sys
 validation=json.load(open(sys.argv[5]))
+# One vulnerability ID per line; text after '#' is the recorded triage reason.
+triaged={line.split('#',1)[0].strip() for line in open(sys.argv[6]) if line.split('#',1)[0].strip()}
 reports=[]
 for variant,path,package in (('cli',sys.argv[1],'php8.4-cli'),('fpm',sys.argv[2],'php8.4-fpm')):
     report=json.load(open(path)); counts={s:0 for s in ('CRITICAL','HIGH')}; findings=[]
@@ -125,14 +128,16 @@ for variant,path,package in (('cli',sys.argv[1],'php8.4-cli'),('fpm',sys.argv[2]
             if severity in counts:
                 findings.append({'severity':severity,'id':vulnerability.get('VulnerabilityID'),
                     'package':vulnerability.get('PkgName'),'installed_version':vulnerability.get('InstalledVersion'),
-                    'fixed_version':vulnerability.get('FixedVersion'),'title':vulnerability.get('Title')})
+                    'fixed_version':vulnerability.get('FixedVersion'),'title':vulnerability.get('Title'),
+                    'triaged':vulnerability.get('VulnerabilityID') in triaged})
+    untriaged=sum(1 for f in findings if not f['triaged'])
     reports.append({'variant':variant,'image_id':expected_id,'os':'ubuntu 24.04','os_package_count':len(packages),
-        'critical':counts['CRITICAL'],'high':counts['HIGH'],
-        'critical_high_findings':findings,'triage_status':'pending_independent_triage'})
+        'critical':counts['CRITICAL'],'high':counts['HIGH'],'untriaged_critical_high':untriaged,
+        'critical_high_findings':findings,'triage_status':'untriaged_findings_block_acceptance' if untriaged else 'no_untriaged_critical_high'})
 db=json.load(open(sys.argv[3]))
 json.dump({'scanner_image':sys.argv[4],'audit_time_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
     'database_metadata':db,'reports':reports,
-    'acceptance':'pending independent triage; actionable in-scope Critical/High findings block acceptance',
+    'acceptance':'Critical/High findings absent from tests/trivy-triaged.txt fail the audit; listing an ID requires a recorded independent triage decision',
     'scope_note':'Scanner silence is not proof that Ubuntu PPA packages contain target fixes; verify runtime/package versions against upstream advisories.'},sys.stdout,indent=2)
 sys.stdout.write('\n')
 PY
@@ -141,8 +146,7 @@ python3 - "$summary_tmp" <<'PY'
 import json,sys
 d=json.load(open(sys.argv[1]))
 for r in d['reports']:
-    print(f"{r['variant'].upper()}: Critical={r['critical']} High={r['high']} packages={r['os_package_count']} (independent triage pending)")
-print('Scanner findings require independent triage; actionable in-scope Critical/High findings block acceptance.')
+    print(f"{r['variant'].upper()}: Critical={r['critical']} High={r['high']} untriaged={r['untriaged_critical_high']} packages={r['os_package_count']}")
 PY
 mv "$work/cli-trivy.json" "$artifact_dir/cli-trivy.json"
 mv "$work/cli-trivy.stderr.log" "$artifact_dir/cli-trivy.stderr.log"
@@ -151,3 +155,9 @@ mv "$work/fpm-trivy.stderr.log" "$artifact_dir/fpm-trivy.stderr.log"
 mv "$summary_tmp" "$artifact_dir/audit-summary.json"
 echo "Trivy reports: $artifact_dir/cli-trivy.json, $artifact_dir/fpm-trivy.json"
 echo "Audit summary: $artifact_dir/audit-summary.json"
+python3 - "$artifact_dir/audit-summary.json" <<'PY'
+import json,sys
+untriaged=sum(r['untriaged_critical_high'] for r in json.load(open(sys.argv[1]))['reports'])
+if untriaged:
+    raise SystemExit(f"{untriaged} Critical/High finding(s) are not in tests/trivy-triaged.txt; triage them (see audit-summary.json) before acceptance.")
+PY
