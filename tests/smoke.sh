@@ -321,10 +321,6 @@ owned_container=true
 docker exec "$container_id" sh -c 'test -d /run && test -f /etc/php/8.4/fpm/pool.d/z-overrides.conf'
 docker exec "$container_id" sh -c 'readlink -f /proc/1/exe' >"$work/pid1-exe.txt"
 [[ $(cat "$work/pid1-exe.txt") == /usr/sbin/php-fpm8.4 ]] || { echo "FPM executable is not PID 1" >&2; exit 1; }
-docker exec "$container_id" sh -c 'tr "\000" " " </proc/1/cmdline' >"$work/pid1.txt"
-if ! grep -q 'php-fpm: master process' "$work/pid1.txt" || ! grep -q '/etc/php/8.4/fpm/php-fpm.conf' "$work/pid1.txt"; then
-    echo "FPM master process or config path missing from PID 1" >&2; exit 1
-fi
 [[ $(docker image inspect --format '{{.Config.StopSignal}}' "$fpm_id") == SIGQUIT ]] || { echo "FPM image StopSignal is not SIGQUIT" >&2; exit 1; }
 port=$(docker port "$container_id" 9000/tcp | sed -n 's/.*:\([0-9][0-9]*\)$/\1/p' | head -n1)
 [[ $port =~ ^[0-9]+$ ]] || { echo "could not determine published FPM port" >&2; exit 1; }
@@ -338,6 +334,11 @@ PY
  sleep .2
 done
 $ready || { docker logs "$container" >&2; echo "FPM did not become ready" >&2; exit 1; }
+# FPM rewrites its process title only after startup, so read it once the port accepts connections.
+docker exec "$container_id" sh -c 'tr "\000" " " </proc/1/cmdline' >"$work/pid1.txt"
+if ! grep -q 'php-fpm: master process' "$work/pid1.txt" || ! grep -q '/etc/php/8.4/fpm/php-fpm.conf' "$work/pid1.txt"; then
+    echo "FPM master process or config path missing from PID 1" >&2; exit 1
+fi
 expected_php=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["version"])' "$cli_runtime")
 python3 "$repo/tests/fpm-probe.py" 127.0.0.1 "$port" "$token" "$expected_php" | tee "$work/fpm-probe.log"
 docker kill --signal=QUIT "$container_id" >/dev/null
