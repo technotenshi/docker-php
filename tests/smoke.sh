@@ -337,7 +337,7 @@ $ready || { docker logs "$container" >&2; echo "FPM did not become ready" >&2; e
 # FPM rewrites its process title only after startup, so read it once the port accepts connections.
 docker exec "$container_id" sh -c 'tr "\000" " " </proc/1/cmdline' >"$work/pid1.txt"
 if ! grep -q 'php-fpm: master process' "$work/pid1.txt" || ! grep -q '/etc/php/8.4/fpm/php-fpm.conf' "$work/pid1.txt"; then
-    echo "FPM master process or config path missing from PID 1" >&2; exit 1
+    echo "FPM master process or config path missing from PID 1: $(cat "$work/pid1.txt")" >&2; exit 1
 fi
 expected_php=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["version"])' "$cli_runtime")
 python3 "$repo/tests/fpm-probe.py" 127.0.0.1 "$port" "$token" "$expected_php" | tee "$work/fpm-probe.log"
