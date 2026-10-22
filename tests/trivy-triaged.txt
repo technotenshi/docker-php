@@ -1,0 +1,4 @@
+# Critical/High vulnerability IDs that were independently triaged as not actionable.
+# One ID per line; text after '#' records the reason. tests/audit.sh fails on any
+# Critical/High finding whose ID is not listed here. IDs match across both images
+# and all packages, so keep the reason specific.
