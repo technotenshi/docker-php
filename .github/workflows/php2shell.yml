@@ -1,0 +1,79 @@
+name: PHP 8.4 image validation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install --yes shellcheck
+
+      - name: Check shell scripts
+        run: |
+          bash -n tests/smoke.sh tests/audit.sh
+          shellcheck tests/smoke.sh tests/audit.sh
+          python3 -c 'import ast; ast.parse(open("tests/fpm-probe.py").read())'
+
+      - name: Validate workflow syntax
+        run: ruby -e 'require "yaml"; YAML.load_file(".github/workflows/php2shell.yml")'
+
+      - name: Build and smoke-test PHP images
+        run: |
+          artifacts="$(mktemp -d)"
+          echo "PHP2SHELL_ARTIFACTS=$artifacts" >> "$GITHUB_ENV"
+          bash tests/smoke.sh "$artifacts"
+          bash tests/audit.sh "$artifacts"
+
+      - name: Add audit status to job summary
+        if: always()
+        env:
+          ARTIFACT_DIR: ${{ env.PHP2SHELL_ARTIFACTS }}
+        run: |
+          if [[ -z "$ARTIFACT_DIR" ]]; then
+            echo 'Image validation did not create an artifact directory; no scan results are available.' >> "$GITHUB_STEP_SUMMARY"
+          elif [[ -s "$ARTIFACT_DIR/audit-summary.json" ]]; then
+            python3 - "$ARTIFACT_DIR/audit-summary.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          print('## Vulnerability scan results')
+          print('Independent triage is pending; actionable in-scope Critical/High findings block acceptance.')
+          for r in d['reports']:
+              print(f"- **{r['variant'].upper()}** ({r['image_id']}): Critical {r['critical']}, High {r['high']}; {r['os_package_count']} Ubuntu packages scanned.")
+          PY
+          else
+            echo 'Image audit did not complete; no complete scan result is available. See step logs for the operational failure.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Retain validation and audit evidence
+        if: always() && env.PHP2SHELL_ARTIFACTS != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: php84-validation-and-audit
+          path: |
+            ${{ env.PHP2SHELL_ARTIFACTS }}/validation.json
+            ${{ env.PHP2SHELL_ARTIFACTS }}/cli-trivy.json
+            ${{ env.PHP2SHELL_ARTIFACTS }}/fpm-trivy.json
+            ${{ env.PHP2SHELL_ARTIFACTS }}/cli-trivy.stderr.log
+            ${{ env.PHP2SHELL_ARTIFACTS }}/fpm-trivy.stderr.log
+            ${{ env.PHP2SHELL_ARTIFACTS }}/audit-summary.json
+          if-no-files-found: warn
+          retention-days: 14
+          include-hidden-files: false
+
+      - name: Remove temporary validation directory
+        if: always() && env.PHP2SHELL_ARTIFACTS != ''
+        env:
+          ARTIFACT_DIR: ${{ env.PHP2SHELL_ARTIFACTS }}
+        run: rm -rf -- "$ARTIFACT_DIR"
